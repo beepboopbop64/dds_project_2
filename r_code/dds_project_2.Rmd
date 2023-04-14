@@ -1,0 +1,152 @@
+---
+title: "dds_project_2"
+author: "Jake"
+date: "2023-04-09"
+output: html_document
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(caret)
+library(ggcorrplot)
+```
+
+
+```{r Top Three Features for Attrition}
+#############
+# Load Data #
+#############
+
+# Read in data set
+attrition_raw_data = read.csv('../raw_data/CaseStudy2-data.csv')
+
+# drop columns with only one value as they are not adding any value
+attrition_clean_data <- attrition_raw_data[vapply(attrition_raw_data, function(x) length(unique(x)) > 1, logical(1L))]
+
+####################
+# Data Exploration #
+####################
+
+# Create factor variables
+attrition_factors_data <- attrition_clean_data
+attrition_factors_data[sapply(attrition_factors_data, is.character)] <- lapply(attrition_clean_data[sapply(attrition_clean_data, is.character)], as.factor)
+
+# Create correlation for all features
+corr_no_feature <- model.matrix(~0+., data=attrition_factors_data) %>% 
+          cor(use="pairwise.complete.obs") 
+
+# Show how all variables correlate to Attrition Yes and Attrition No
+filtered_corr <- data.frame(corr_no_feature) %>% 
+                  filter(rownames(corr_no_feature) %in% c('AttritionNo', 'AttritionYes'))
+
+# Arrange variables correlation so we can understand which variables matter the most
+data.frame(t(filtered_corr)) %>%
+  arrange(abs(AttritionNo))
+
+# Years in current role with attrition. 
+# Note: 0 and 2 years seem to be the most likely to have attrition.
+attrition_raw_data %>%
+  select(Attrition, YearsInCurrentRole) %>%
+  ggplot(aes(x=YearsInCurrentRole, fill=Attrition)) +
+    geom_bar(position="dodge")
+
+# Years since last promotion with attrition
+# Note: Attrition rates tend go down from 0 - 5 year than back up from 5 - 7 then down again.
+attrition_raw_data %>%
+  select(Attrition, YearsSinceLastPromotion) %>%
+  ggplot(aes(x=YearsSinceLastPromotion, fill=Attrition)) +
+    geom_bar(position="dodge")
+
+# Years per Company (Total Working Years / Number of Companies worked for) with attrition
+# Note: Attrition tends to go down from 0 - 4 years then back up at 5 and then back down again.
+# Note: An assumption is made that 0 for NumCompaniesWorked means you have only worked for Frito Lay. To make the formula work we add 1 to all values in the NumCompaniesWorked column.
+attrition_raw_data %>%
+  mutate(TotalWorkingYears = if_else(TotalWorkingYears=='0', 1,
+                                     as.double(TotalWorkingYears))) %>%
+  mutate(NumCompaniesWorked = NumCompaniesWorked + 1) %>% # assumption
+  mutate(YearsPerCompany = as.integer(TotalWorkingYears / NumCompaniesWorked)) %>%
+  select(Attrition, YearsPerCompany) %>%
+  ggplot(aes(x=YearsPerCompany, fill=Attrition)) +
+    geom_bar(position="dodge")
+
+#######################
+# Feature Engineering #
+#######################
+
+# Create a data set with some feature engineering based on what we have observed.
+attrition_feature_enginering <- attrition_clean_data %>%
+  # Survey Results
+  mutate(survey_results = 
+           JobInvolvement + JobSatisfaction + WorkLifeBalance) %>%
+  # Worker Type
+  mutate(worker_type = case_when(OverTime=='Yes' ~ 1,
+                                 OverTime=='No' ~ 5) + 
+                       case_when(MaritalStatus=='Married' ~ 5,
+                                 MaritalStatus=='Divorced' ~ 3,
+                                 MaritalStatus=='Single' ~ 1) +
+                       JobLevel) %>%
+  # Career Type
+  # Create YearsPerCompany
+  mutate(TotalWorkingYears = if_else(TotalWorkingYears=='0', 1,
+                                    as.double(TotalWorkingYears))) %>%
+  mutate(NumCompaniesWorked = NumCompaniesWorked + 1) %>% # assumption
+  mutate(YearsPerCompany = as.integer(TotalWorkingYears / NumCompaniesWorked)) %>%
+  # Create career_type
+  mutate(career_type = case_when(YearsPerCompany==0 ~ 1,
+                                 YearsPerCompany==1 ~ 2,
+                                 YearsPerCompany==2 ~ 3,
+                                 YearsPerCompany==3 ~ 4,
+                                 TRUE ~ 5) +
+                       case_when(YearsInCurrentRole==0 ~ 1,
+                                 YearsInCurrentRole==2 ~ 2,
+                                 YearsInCurrentRole==7 ~ 3,
+                                 YearsInCurrentRole %in% c(1, 3, 4) ~ 4,
+                                 TRUE ~ 5) +
+                       case_when(YearsSinceLastPromotion==0 ~ 1,
+                                 YearsSinceLastPromotion==1 ~ 2,
+                                 YearsSinceLastPromotion==2 ~ 3,
+                                 YearsSinceLastPromotion==7 ~ 4,
+                                 TRUE ~ 5)
+         ) %>%
+  
+  select(Attrition, survey_results, worker_type, career_type) 
+
+# Create factor variables
+attrition_factors_data_with_enginering <- attrition_feature_enginering
+attrition_factors_data_with_enginering[sapply(attrition_factors_data_with_enginering, is.character)] <- lapply(attrition_clean_data[sapply(attrition_clean_data, is.character)], as.factor)
+
+# Create correlation for all engineered features
+corr <- model.matrix(~0+., data=attrition_factors_data_with_enginering) %>% 
+          cor(use="pairwise.complete.obs") 
+
+# Create correlation with visual 
+model.matrix(~0+., data=attrition_factors_data_with_enginering) %>% 
+  cor(use="pairwise.complete.obs") %>% 
+  ggcorrplot(show.diag=FALSE, type="lower", lab=TRUE, lab_size=2)
+
+######################################################
+# 6 Step Hypothesis test for each engineered feature #
+######################################################
+
+# survey_results
+
+# worker_type
+
+# career_type
+
+
+#################################
+# Ideas for Future Improvements #
+#################################
+
+## Data Exploration
+# Rshiny app for creating graphs so exploration of new/other features is easier 
+
+```
+
+
+```{r }
+plot(pressure)
+```
