@@ -11,6 +11,8 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(caret)
 library(ggcorrplot)
+library(ggthemes)
+library(DMwR2)
 ```
 
 
@@ -126,27 +128,45 @@ model.matrix(~0+., data=attrition_factors_data_with_enginering) %>%
   cor(use="pairwise.complete.obs") %>% 
   ggcorrplot(show.diag=FALSE, type="lower", lab=TRUE, lab_size=2)
 
-######################################################
-# 6 Step Hypothesis test for each engineered feature #
-######################################################
+####################
+# Balance Data set #
+####################
 
-# survey_results
+# Data set imbalanced
+attrition_factors_data_with_enginering %>%
+  ggplot(aes(Attrition, fill=Attrition)) +
+  geom_bar() +
+  labs(title='Attrition Count', x='Attrition', y='Count') +
+  theme_economist() +
+  scale_fill_manual(values = c("blue", "red"))
 
-# worker_type
+# Balance data set with SMOTE (Synthetic Minority Oversampling Technique)
+smote_obj <- SMOTE(attrition_factors_data_with_enginering[, 2:ncol(attrition_factors_data_with_enginering)], attrition_factors_data_with_enginering[, 1])
 
-# career_type
+# Get data out of smote object
+balanced_attrition_factors_data_with_enginering <- smote_obj$data
+# Rename class as Attrition
+colnames(balanced_attrition_factors_data_with_enginering)[ncol(attrition_factors_data_with_enginering)] <- "Attrition"
 
+# Data set now balanced
+balanced_attrition_factors_data_with_enginering %>%
+  ggplot(aes(Attrition, fill=Attrition)) +
+  geom_bar() +
+  labs(title='Attrition Count', x='Attrition', y='Count') +
+  theme_economist() +
+  scale_fill_manual(values = c("blue", "red"))
 
 #################################
 # Ideas for Future Improvements #
 #################################
 
 ## Data Exploration
-# Rshiny app for creating graphs so exploration of new/other features is easier 
-
+# R Shiny app for creating graphs so exploration of new/other features is easier 
+# It would be nice if feature engineering / combination of features could be abstracted so end user could "create" features based on domain knowledge
+# Maybe scale features instead of hard coding values 1 - 5 based on observations
 ```
 
 
-```{r }
+```{r Model Attrition}
 plot(pressure)
 ```
