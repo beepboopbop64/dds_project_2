@@ -341,11 +341,107 @@ mean(MeanAcc_NB[, "Specificity"])
 ## Add: Ensemble for both models
 ```
 
+``` {r Salary Data Exploration}
+#############
+# Load Data #
+#############
+
+# Read in data set
+salary_raw_data = read.csv('../raw_data/CaseStudy2-data.csv')
+
+# drop columns with only one value as they are not adding any value
+salary_clean_data <- sallery_raw_data[vapply(attrition_raw_data, function(x) length(unique(x)) > 1, logical(1L))]
+
+# Create factor variables
+salary_factors_data <- salary_clean_data
+salary_factors_data[sapply(salary_factors_data, is.character)] <- lapply(salary_clean_data[sapply(salary_clean_data, is.character)], as.factor)
+
+###################################
+# Find Most Significant Variables #
+###################################
+
+# find the best combination of variables to use for our model
+salary_model <- lm(MonthlyIncome ~ MonthlyRate + StockOptionLevel + YearsAtCompany + TotalWorkingYears +
+                                   YearsSinceLastPromotion + YearsWithCurrManager + JobInvolvement + Age + 
+                                   JobLevel + JobRole + Gender + Education + Department + DailyRate + BusinessTravel + 
+                                   HourlyRate, 
+                   data=salary_factors_data)
+summary(salary_model)
+confint(salary_model)
+
+#######################################
+# Drop Insignificant Factor Variables #
+#######################################
+
+salary_factors_w_dropped_factor_levels_data <- salary_factors_data
+salary_factors_w_dropped_factor_levels_data$JobRole <- 
+  droplevels(salary_factors_w_dropped_factor_levels_data$JobRole,
+             exclude=c(''))
+
+#################################
+# Ideas for Future Improvements #
+#################################
+## Load Data
+# Make Load Data the data a function so its more repeatable
+
+```
+
 ``` {r Model Salery}
 
+###################################################
+# Create Models Based on Most Impactful Variables #
+###################################################
+
+# specify the cross-validation method
+ctrl <- trainControl(method = "LOOCV")
+
+# Fit the models
+salary_model_wo_JobRole <- train(MonthlyIncome ~ TotalWorkingYears + JobLevel + YearsSinceLastPromotion, 
+                                 method='lm', data=salary_factors_data)
+
+salary_model_w_JobRole <- train(MonthlyIncome ~ TotalWorkingYears + JobLevel + JobRole + YearsSinceLastPromotion, 
+                                method='lm', data=salary_factors_data)
+
+# With Leave One Out Cross Validation find best model
+salary_model_wo_JobRole # Worst: RMSE = 1401.708
+salary_model_w_JobRole # Best: RMSE = 1082.55
+
+best_known_salary_model <- lm(MonthlyIncome ~ TotalWorkingYears + JobLevel + JobRole + YearsSinceLastPromotion, 
+                              data=salary_factors_data)
+summary(best_known_salary_model)
+confint(best_known_salary_model)
+
+##########################
+# 6 Step Hypothesis Test #
+##########################
+
+# All based on Summary and Confint from above
+# This is one example for Total Working years
+# Note: not all factors for Job Role are significant but overall the factors that are impactful are enough to warrant including in model.
+
+# Step 1: Identify the null and alternative hypothesis 
+#   Ho: B1 = 0
+#   Ha: B1 != 0
+#   a = 0.05
+
+# Step 3: Find the test statistic
+# T = Bo^ / SE(Bo^)
+# T = 45.109 / 8.388 = 5.378
+
+# Step 4: Find the P Value
+# 9.71e-08
+
+# Step 5: Reject Ho
+
+# Step 6: There is overwhelming evidence to suggest that the slope is different from zero. Out estimate for Total Working Years is 45.109 (Total Working Years)and we are 95% confident that the intercept is between 28.64 and 61.57
 
 
-
+#################################
+# Ideas for Future Improvements #
+#################################
+## Create Model Based on Most Impactful Variables
+# Pull variables from the previous module (Find Most Significant Variables) automatically?
+# Pick top 3 possible models automatically
 ```
 
 
