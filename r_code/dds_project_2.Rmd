@@ -9,10 +9,12 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 
 library(tidyverse)
+library(class)
 library(caret)
 library(ggcorrplot)
 library(ggthemes)
-library(DMwR2)
+library(e1071)
+library(plotly)
 ```
 
 
@@ -156,6 +158,21 @@ balanced_attrition_factors_data_with_enginering %>%
   theme_economist() +
   scale_fill_manual(values = c("blue", "red"))
 
+
+###########
+# 3D Plot #
+###########
+
+plot_ly(x=balanced_attrition_factors_data_with_enginering$survery_results,
+        y=balanced_attrition_factors_data_with_enginering$worker_type,
+        z=balanced_attrition_factors_data_with_enginering$career_type,
+        type="scatter3d", 
+        color=balanced_attrition_factors_data_with_enginering$Attrition) %>%
+  layout(scene=list(xaxis=list(title="Survery Results"),
+                    yaxis=list(title="Worker Type"),
+                    zaxis=list(title="Career Type")),
+         title="Attrition by Survey Results and Worker/Career Type")
+
 #################################
 # Ideas for Future Improvements #
 #################################
@@ -168,5 +185,177 @@ balanced_attrition_factors_data_with_enginering %>%
 
 
 ```{r Model Attrition}
-plot(pressure)
+#############
+# KNN Model #
+#############
+
+knn_loop <- function(iterations, num_of_k_s, split_percent, data_for_model,
+                     data_start_column, data_end_column, label_column) {
+  # This functions assumes all labeling data is either at the end or the 
+  # beginning of your data frame.
+  masterAcc = matrix(nrow = iterations, ncol = numks)
+  masterSens = matrix(nrow = iterations, ncol = numks)
+  masterSpec = matrix(nrow = iterations, ncol = numks)
+
+  for(j in 1:iterations)
+  {
+    accs = data.frame(accuracy = numeric(numks), k = numeric(numks))
+    trainIndices = sample(1:dim(data_for_model)[1],
+                        round(splitPerc * dim(data_for_model)[1]))
+    train = data_for_model[trainIndices,]
+    test = data_for_model[-trainIndices,]
+    for(i in 1:numks)
+    {
+      classifications = knn(train[,data_start_column:data_end_column], 
+                            test[,data_start_column:data_end_column], 
+                            train[[label_column]], 
+                            k = i, 
+                            prob = TRUE
+                            )
+      CM = confusionMatrix(table(classifications, test[[label_column]]))
+      # Write to Accuracy Table
+      masterAcc[j,i] = CM$overall[1]
+      # Write to Sensitivity Table
+      masterSens[j,i] = CM$byClass[1]
+      # Write to Specificity Table
+      masterSpec[j,i] = CM$byClass[2]
+    }
+  }
+  
+  MeanAcc = colMeans(masterAcc)
+  MeanSens = colMeans(masterSens)
+  MeanSpec = colMeans(masterSpec)
+  
+  ReturnObj <- c(MeanAcc, MeanSens, MeanSpec)
+  
+  return(ReturnObj)
+}
+
+# Set up parameters for loop
+iterations_knn = 500
+numks = 10
+splitPerc = .7
+
+# Run the loop for the desired amount of iterations and values for k
+KNN_results = 
+  knn_loop(iterations=iterations_knn, num_of_k_s=numks, split_percent=splitPerc,
+           data_for_model=balanced_attrition_factors_data_with_enginering, 
+           data_start_column=1, 
+           data_end_column=(ncol(balanced_attrition_factors_data_with_enginering) - 1),
+           label_column="Attrition")
+
+# Turn MeanAcc_knn into a data frame
+sequence_of_k_s = seq(1,numks,1)
+Mean_Acc_df = as.data.frame(KNN_results[1:10])
+colnames(Mean_Acc_df)[1] <- "Accuracy"
+Mean_Acc_df$K_value = sequence_of_k_s
+
+Mean_Sens_df = as.data.frame(KNN_results[11:20])
+colnames(Mean_Sens_df)[1] <- "Sensitivity"
+Mean_Sens_df$K_value = sequence_of_k_s
+  
+Mean_Spec_df = as.data.frame(KNN_results[21:30])
+colnames(Mean_Spec_df)[1] <- "Specificity"
+Mean_Spec_df$K_value = sequence_of_k_s
+
+
+knn_results_df <- merge(Mean_Acc_df, Mean_Sens_df, by="K_value")
+knn_results_df <- merge(knn_results_df, Mean_Spec_df, by="K_value")
+knn_results_df
+
+# Create a graph of accuracy across all values for k
+# Note: Looks like K = 1 is best value
+knn_results_df %>%
+  ggplot(aes(x=K_value)) +
+  geom_line(aes(y=Accuracy, color="Accuracy")) +
+  geom_line(aes(y=Sensitivity, color="Sensitivity")) +
+  geom_line(aes(y=Specificity, color="Specificity")) +
+  ggtitle("Model Metrics Across Values of K") +
+  labs(x='Number for K', y='Model Metric Percent') +
+  theme_economist()
+
+
+###############
+# Naive Bayes #
+###############
+
+naive_bayes_loop <- function(num_iteration, data_for_model, split_percent,
+                             data_start_column, data_end_column, label_column) {
+  masterAcc = matrix(nrow=iterations, ncol=3)
+  colnames(masterAcc) <- c("Accuracy", "Sensitivity", "Specificity")
+  
+  for(i in 1:iterations)
+    {
+      set.seed(i)
+      # Split the data into train and test based on sample with seed
+      train_indices = sample(seq(1:length(data_for_model$Attrition)), 
+                           round(split_percent * length(data_for_model[[label_column]])))
+    
+      # Create the train and test data based on previous sample split
+      train = data_for_model[train_indices,]
+      test = data_for_model[-train_indices,]
+      
+      model = naiveBayes(train[, data_start_column:data_end_column],
+                         train[[label_column]])
+      
+      
+      CM = confusionMatrix(table(predict(model,
+                                         test[, data_start_column:data_end_column]), 
+                                         test[[label_column]]
+                                 )
+                           )
+      masterAcc[i, "Accuracy"] = CM$overall[1] # Attach accuracy for loop
+      masterAcc[i, "Sensitivity"] = CM$byClass[1] # Attach sensitivity for loop
+      masterAcc[i, "Specificity"] = CM$byClass[2] # Attach specificity for loop
+  }
+  
+  return(masterAcc)
+}
+
+
+# Set up parameters for loop
+nb_iterations = 100
+nb_split_percent = .7
+
+MeanAcc_NB = 
+  naive_bayes_loop(num_iteration=nb_iterations, 
+                   data_for_model=balanced_attrition_factors_data_with_enginering, 
+                   split_percent=nb_split_percent, data_start_column=1,
+                   data_end_column=(ncol(balanced_attrition_factors_data_with_enginering) - 1),
+                   label_column="Attrition")
+
+
+print("Mean of Accuracy")
+mean(MeanAcc_NB[, "Accuracy"])
+print("Mean of Sensitivity")
+mean(MeanAcc_NB[, "Sensitivity"])
+print("Mean of Specificity")
+mean(MeanAcc_NB[, "Specificity"])
+
+#################################
+# Ideas for Future Improvements #
+#################################
+## KNN Model
+# Make model metrics data frame a little more dynamic / clean
+
+## Add: Ensemble for both models
 ```
+
+``` {r Model Salery}
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
