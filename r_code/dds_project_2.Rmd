@@ -5,8 +5,8 @@ date: "2023-04-09"
 output: html_document
 ---
 
-```{r setup, include=FALSE, echo=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
 
 library(tidyverse)
 library(class)
@@ -15,8 +15,48 @@ library(ggcorrplot)
 library(ggthemes)
 library(e1071)
 library(plotly)
+library(smotefamily)
+```
+``` {r Job Role Specific Trend, warning=FALSE}
+# Read in data set
+job_role_exploration = read.csv('../raw_data/CaseStudy2-data.csv')
+
+# drop columns with only one value as they are not adding any value
+job_role_exploration_clean_data <- job_role_exploration[vapply(job_role_exploration, function(x) length(unique(x)) > 1, logical(1L))]
+
+job_role_exploration_clean_data %>%
+  ggplot(aes(x=YearsInCurrentRole, y=JobSatisfaction, color=JobRole)) +
+  geom_smooth() +
+  facet_wrap(~ JobRole) +
+  labs(x="Years in Current Role", y="Job Satisfaction", title="Job Satisfaction by Job Role and Years in Current Role")
+
+job_role_exploration_clean_data %>%
+  ggplot(aes(x=YearsInCurrentRole, y=PerformanceRating, color=JobRole)) +
+  geom_smooth() +
+  facet_wrap(~ JobRole) +
+  labs(x="Years in Current Role", y="Performance Rating", title="Performance Rating by Job Role and Years in Current Role")
+
+
 ```
 
+``` {r Other Interesting Trend}
+interesting_attrition_exploration = read.csv('../raw_data/CaseStudy2-data.csv')
+
+# drop columns with only one value as they are not adding any value
+interesting_attrition_exploration_clean_data <- interesting_attrition_exploration[vapply(interesting_attrition_exploration, function(x) length(unique(x)) > 1, logical(1L))]
+
+
+# Years in current role with attrition. 
+# Note: 0 and 2 years seem to be the most likely to have attrition.
+interesting_attrition_exploration_clean_data %>%
+  ggplot(aes(x=YearsInCurrentRole, fill=Attrition)) +
+    geom_bar(position="dodge") +
+    facet_wrap(~ JobRole)+
+    labs(x="Years in Current Role", y="Attrition", 
+         title="Attrition Count by Job Role and Years in Current Role")
+
+
+```
 
 ```{r Top Three Features for Attrition}
 #############
@@ -81,6 +121,16 @@ attrition_raw_data %>%
 
 # Create a data set with some feature engineering based on what we have observed.
 attrition_feature_enginering <- attrition_clean_data %>%
+  # Job Type Risk
+  mutate(job_type_risk = case_when(JobRole %in% 
+                                     c("Healthcare Representative",
+                                       "Laboratory Technician",
+                                       "Research Scientist",
+                                       "Sales Executive",
+                                       "Sales Representative") ~ "High Risk",
+                                    TRUE ~ "Low Risk")
+         ) %>%
+  mutate_at(vars(job_type_risk), as.factor) %>%
   # Survey Results
   mutate(survey_results = 
            JobInvolvement + JobSatisfaction + WorkLifeBalance) %>%
@@ -115,7 +165,7 @@ attrition_feature_enginering <- attrition_clean_data %>%
                                  TRUE ~ 5)
          ) %>%
   
-  select(Attrition, survey_results, worker_type, career_type) 
+  select(Attrition, job_type_risk, survey_results, worker_type, career_type) 
 
 # Create factor variables
 attrition_factors_data_with_enginering <- attrition_feature_enginering
@@ -139,8 +189,14 @@ attrition_factors_data_with_enginering %>%
   ggplot(aes(Attrition, fill=Attrition)) +
   geom_bar() +
   labs(title='Attrition Count', x='Attrition', y='Count') +
+  facet_wrap(~ job_type_risk) +
   theme_economist() +
   scale_fill_manual(values = c("blue", "red"))
+
+# Convert job type risk into number
+attrition_factors_data_with_enginering <- attrition_factors_data_with_enginering %>%
+  mutate(job_type_risk = case_when(job_type_risk=="High Risk" ~ 0,
+                                   job_type_risk=="Low Risk" ~ 15))
 
 # Balance data set with SMOTE (Synthetic Minority Oversampling Technique)
 smote_obj <- SMOTE(attrition_factors_data_with_enginering[, 2:ncol(attrition_factors_data_with_enginering)], attrition_factors_data_with_enginering[, 1])
@@ -150,28 +206,50 @@ balanced_attrition_factors_data_with_enginering <- smote_obj$data
 # Rename class as Attrition
 colnames(balanced_attrition_factors_data_with_enginering)[ncol(attrition_factors_data_with_enginering)] <- "Attrition"
 
+# Convert job type risk back into string
+balanced_attrition_factors_data_with_enginering <- balanced_attrition_factors_data_with_enginering %>%
+  mutate(job_type_risk = case_when(job_type_risk==0 ~ "High Risk",
+                                   job_type_risk==15 ~ "Low Risk"))
+
+
 # Data set now balanced
 balanced_attrition_factors_data_with_enginering %>%
   ggplot(aes(Attrition, fill=Attrition)) +
   geom_bar() +
   labs(title='Attrition Count', x='Attrition', y='Count') +
+  facet_wrap(~ job_type_risk) +
   theme_economist() +
   scale_fill_manual(values = c("blue", "red"))
-
 
 ###########
 # 3D Plot #
 ###########
+balanced_attrition_factors_data_with_enginering_high <- balanced_attrition_factors_data_with_enginering %>%
+  filter(job_type_risk == "High Risk")
+balanced_attrition_factors_data_with_enginering_low <- balanced_attrition_factors_data_with_enginering %>%
+  filter(job_type_risk == "Low Risk")
 
-plot_ly(x=balanced_attrition_factors_data_with_enginering$survery_results,
-        y=balanced_attrition_factors_data_with_enginering$worker_type,
-        z=balanced_attrition_factors_data_with_enginering$career_type,
+plot_ly(x=balanced_attrition_factors_data_with_enginering_high$survey_results,
+        y=balanced_attrition_factors_data_with_enginering_high$worker_type,
+        z=balanced_attrition_factors_data_with_enginering_high$career_type,
         type="scatter3d", 
-        color=balanced_attrition_factors_data_with_enginering$Attrition) %>%
+        mode="markers",
+        color=balanced_attrition_factors_data_with_enginering_high$Attrition) %>%
   layout(scene=list(xaxis=list(title="Survery Results"),
                     yaxis=list(title="Worker Type"),
                     zaxis=list(title="Career Type")),
-         title="Attrition by Survey Results and Worker/Career Type")
+         title="High Risk Jobs: Attrition by Survey Results and Worker/Career Type")
+
+plot_ly(x=balanced_attrition_factors_data_with_enginering_low$survey_results,
+        y=balanced_attrition_factors_data_with_enginering_low$worker_type,
+        z=balanced_attrition_factors_data_with_enginering_low$career_type,
+        type="scatter3d", 
+        color=balanced_attrition_factors_data_with_enginering_low$Attrition) %>%
+  layout(scene=list(xaxis=list(title="Survery Results"),
+                    yaxis=list(title="Worker Type"),
+                    zaxis=list(title="Career Type")),
+         title="Low Risk Jobs: Attrition by Survey Results and Worker/Career Type")
+
 
 #################################
 # Ideas for Future Improvements #
@@ -236,6 +314,11 @@ iterations_knn = 500
 numks = 10
 splitPerc = .7
 
+# Convert job type risk into number
+balanced_attrition_factors_data_with_enginering <- balanced_attrition_factors_data_with_enginering %>%
+  mutate(job_type_risk = case_when(job_type_risk=="High Risk" ~ 0,
+                                   job_type_risk=="Low Risk" ~ 15))
+
 # Run the loop for the desired amount of iterations and values for k
 KNN_results = 
   knn_loop(iterations=iterations_knn, num_of_k_s=numks, split_percent=splitPerc,
@@ -264,7 +347,7 @@ knn_results_df <- merge(knn_results_df, Mean_Spec_df, by="K_value")
 knn_results_df
 
 # Create a graph of accuracy across all values for k
-# Note: Looks like K = 1 is best value
+# Note: Looks like K = 3 is best value
 knn_results_df %>%
   ggplot(aes(x=K_value)) +
   geom_line(aes(y=Accuracy, color="Accuracy")) +
@@ -281,14 +364,14 @@ knn_results_df %>%
 
 naive_bayes_loop <- function(num_iteration, data_for_model, split_percent,
                              data_start_column, data_end_column, label_column) {
-  masterAcc = matrix(nrow=iterations, ncol=3)
+  masterAcc = matrix(nrow=num_iteration, ncol=3)
   colnames(masterAcc) <- c("Accuracy", "Sensitivity", "Specificity")
   
-  for(i in 1:iterations)
+  for(i in 1:num_iteration)
     {
       set.seed(i)
       # Split the data into train and test based on sample with seed
-      train_indices = sample(seq(1:length(data_for_model$Attrition)), 
+      train_indices = sample(seq(1:length(data_for_model[[label_column]])), 
                            round(split_percent * length(data_for_model[[label_column]])))
     
       # Create the train and test data based on previous sample split
@@ -338,6 +421,9 @@ mean(MeanAcc_NB[, "Specificity"])
 ## KNN Model
 # Make model metrics data frame a little more dynamic / clean
 
+## Naive Bayes
+# I think we could work on featuring engineering for this type of model specifically maybe?
+
 ## Add: Ensemble for both models
 ```
 
@@ -350,7 +436,7 @@ mean(MeanAcc_NB[, "Specificity"])
 salary_raw_data = read.csv('../raw_data/CaseStudy2-data.csv')
 
 # drop columns with only one value as they are not adding any value
-salary_clean_data <- sallery_raw_data[vapply(attrition_raw_data, function(x) length(unique(x)) > 1, logical(1L))]
+salary_clean_data <- salary_raw_data[vapply(salary_raw_data, function(x) length(unique(x)) > 1, logical(1L))]
 
 # Create factor variables
 salary_factors_data <- salary_clean_data
@@ -449,6 +535,17 @@ confint(best_known_salary_model)
 
 
 
+
+x <- rnorm(50)
+y <- rnorm(50)
+z <- rnorm(50)
+
+fig <- plot_ly(x = x, y = y, z = z, type = "scatter3d", mode = "markers")
+fig <- fig %>% add_markers(color = z, colors = "Blues")
+fig <- fig %>% layout(scene = list(xaxis = list(title = "X"),
+                                    yaxis = list(title = "Y"),
+                                    zaxis = list(title = "Z")))
+fig
 
 
 
