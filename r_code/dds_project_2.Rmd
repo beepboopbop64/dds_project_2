@@ -16,7 +16,12 @@ library(ggthemes)
 library(e1071)
 library(plotly)
 library(smotefamily)
+
 ```
+
+# Job Role Specific Trend
+Here we uncovered that certain jobs tend to have a spike or dip for satisfaction as well as performance at the start. We believe that this has something to do with an employee getting more use to their job as well as them potentially getting ready for a promotion. We believe that the evidence suggests if the employee doesn't get their promotion their satisfaction and performance deteriorate as a result.
+
 ``` {r Job Role Specific Trend, warning=FALSE}
 # Read in data set
 job_role_exploration = read.csv('../raw_data/CaseStudy2-data.csv')
@@ -39,6 +44,9 @@ job_role_exploration_clean_data %>%
 
 ```
 
+# Other Interesting Trend
+Another interesting fact we found in data exploration is that employees have a much higher chance of attrition during year 0 and year 2 which further helps prove out that if an employee doesn't get a promotion especially in "earlier" and "higher" risk times for attrition such as a Sales Representative the evidence suggests they are more likely to leave.
+
 ``` {r Other Interesting Trend}
 interesting_attrition_exploration = read.csv('../raw_data/CaseStudy2-data.csv')
 
@@ -57,6 +65,16 @@ interesting_attrition_exploration_clean_data %>%
 
 
 ```
+
+# Top Three Features for Attrition
+The Top features are:
+  * Worker Type
+  * Survey Results
+  * Career Type
+
+These are features that were engineered during our process. The mapping to how these features are created can be found below. The general process was to chart the features we were interested in and rank their likelihood of attrition into 1 - 5 buckets. 1 being the worst and 5 being the best. These features were then added together to create the desired "summary" or engineered feature.
+
+We also balanced the data set using SMOTE as this will help our models better predict on new data.
 
 ```{r Top Three Features for Attrition}
 #############
@@ -260,7 +278,8 @@ plot_ly(x=balanced_attrition_factors_data_with_enginering_low$survey_results,
 # It would be nice if feature engineering / combination of features could be abstracted so end user could "create" features based on domain knowledge
 # Maybe scale features instead of hard coding values 1 - 5 based on observations
 ```
-
+# Attrition Model
+Here we test out both KNN and Naive Bayes on predicting attrition. It is clear that the model that preformed best on this data set was KNN.
 
 ```{r Model Attrition}
 #############
@@ -427,6 +446,9 @@ mean(MeanAcc_NB[, "Specificity"])
 ## Add: Ensemble for both models
 ```
 
+# Salery Data Exploration
+Here we first pick variables that seem to have an impact on salary. From here we run a LM to see how well each variable preforms with data.  
+
 ``` {r Salary Data Exploration}
 #############
 # Load Data #
@@ -471,6 +493,11 @@ salary_factors_w_dropped_factor_levels_data$JobRole <-
 # Make Load Data the data a function so its more repeatable
 
 ```
+
+# Salery Model
+Once we have that we picked the best two models (including and excluding Job Role with Total working years, Job Level, and Years since last promotion) we found that including Job Role helps the model and picked that model to use in predicting.
+
+Below is also a 6 step Hypothesis test to show significance.
 
 ``` {r Model Salery}
 
@@ -532,23 +559,94 @@ confint(best_known_salary_model)
 
 
 
+``` {r Predicting Test Data}
+#############
+# Load Data #
+#############
+salary_raw_predict_data = read.csv('../raw_data/CaseStudy2CompSet No Salary.csv')
+attrition_raw_predict_data = read.csv('../raw_data/CaseStudy2CompSet No Attrition.csv')
 
+########################
+# Attrition Prediction #
+########################
 
+# drop columns with only one value as they are not adding any value
+attrition_prediction_clean_data <- attrition_raw_predict_data[vapply(attrition_raw_predict_data, function(x) length(unique(x)) > 1, logical(1L))]
 
+# Create a data set with some feature engineering based on what we have observed.
+attrition_prediction_feature_enginering <- attrition_prediction_clean_data %>%
+  # Job Type Risk
+  mutate(job_type_risk = case_when(JobRole %in% 
+                                     c("Healthcare Representative",
+                                       "Laboratory Technician",
+                                       "Research Scientist",
+                                       "Sales Executive",
+                                       "Sales Representative") ~ "High Risk",
+                                    TRUE ~ "Low Risk")
+         ) %>%
+  mutate_at(vars(job_type_risk), as.factor) %>%
+  # Survey Results
+  mutate(survey_results = 
+           JobInvolvement + JobSatisfaction + WorkLifeBalance) %>%
+  # Worker Type
+  mutate(worker_type = case_when(OverTime=='Yes' ~ 1,
+                                 OverTime=='No' ~ 5) + 
+                       case_when(MaritalStatus=='Married' ~ 5,
+                                 MaritalStatus=='Divorced' ~ 3,
+                                 MaritalStatus=='Single' ~ 1) +
+                       JobLevel) %>%
+  # Career Type
+  # Create YearsPerCompany
+  mutate(TotalWorkingYears = if_else(TotalWorkingYears=='0', 1,
+                                    as.double(TotalWorkingYears))) %>%
+  mutate(NumCompaniesWorked = NumCompaniesWorked + 1) %>% # assumption
+  mutate(YearsPerCompany = as.integer(TotalWorkingYears / NumCompaniesWorked)) %>%
+  # Create career_type
+  mutate(career_type = case_when(YearsPerCompany==0 ~ 1,
+                                 YearsPerCompany==1 ~ 2,
+                                 YearsPerCompany==2 ~ 3,
+                                 YearsPerCompany==3 ~ 4,
+                                 TRUE ~ 5) +
+                       case_when(YearsInCurrentRole==0 ~ 1,
+                                 YearsInCurrentRole==2 ~ 2,
+                                 YearsInCurrentRole==7 ~ 3,
+                                 YearsInCurrentRole %in% c(1, 3, 4) ~ 4,
+                                 TRUE ~ 5) +
+                       case_when(YearsSinceLastPromotion==0 ~ 1,
+                                 YearsSinceLastPromotion==1 ~ 2,
+                                 YearsSinceLastPromotion==2 ~ 3,
+                                 YearsSinceLastPromotion==7 ~ 4,
+                                 TRUE ~ 5)
+         ) %>%
+  
+  select(job_type_risk, survey_results, worker_type, career_type) 
 
-x <- rnorm(50)
-y <- rnorm(50)
-z <- rnorm(50)
+# Create factor variables
+attrition_prediction_factors_data_with_enginering <- attrition_prediction_feature_enginering
+attrition_prediction_factors_data_with_enginering[sapply(attrition_prediction_factors_data_with_enginering, is.character)] <- lapply(attrition_prediction_clean_data[sapply(attrition_prediction_clean_data, is.character)], as.factor)
 
-fig <- plot_ly(x = x, y = y, z = z, type = "scatter3d", mode = "markers")
-fig <- fig %>% add_markers(color = z, colors = "Blues")
-fig <- fig %>% layout(scene = list(xaxis = list(title = "X"),
-                                    yaxis = list(title = "Y"),
-                                    zaxis = list(title = "Z")))
-fig
+# Convert job type risk into number
+attrition_prediction_factors_data_with_enginering <- attrition_prediction_factors_data_with_enginering %>%
+  mutate(job_type_risk = case_when(job_type_risk=="High Risk" ~ 0,
+                                   job_type_risk=="Low Risk" ~ 15))
 
+balanced_attrition_factors_data_with_enginering
+attrition_prediction_factors_data_with_enginering
 
+attrition_prediction <- knn(balanced_attrition_factors_data_with_enginering[, 1:4], 
+    attrition_prediction_factors_data_with_enginering, 
+    balanced_attrition_factors_data_with_enginering$Attrition, 
+    k = 3
+    )
 
+attrition_prediction <- as.data.frame(attrition_prediction)
 
+write.csv(attrition_prediction, "../prediction_results/Case2PredictionsRastberger Attrition.csv")
 
+#####################
+# Salary Prediction #
+#####################
 
+salary_prediction <- predict(best_known_salary_model, newdata=salary_raw_predict_data)
+write.csv(salary_prediction, "../prediction_results/Case2PredictionsRastberger Salary.csv")
+```

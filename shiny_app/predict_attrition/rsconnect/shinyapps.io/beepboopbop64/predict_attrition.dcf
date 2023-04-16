@@ -1,0 +1,13 @@
+name: predict_attrition
+title: predict_attrition
+username:
+account: beepboopbop64
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 8862740
+bundleId: 7094327
+url: https://beepboopbop64.shinyapps.io/predict_attrition/
+when: 1681604769.84711
+lastSyncTime: 1681604769.84712
+asMultiple: FALSE
+asStatic: FALSE
